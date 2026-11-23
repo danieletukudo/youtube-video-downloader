@@ -43,14 +43,13 @@
             />
           </div>
 
-          <div class="field">
+          <div class="field" id="folderField">
             <label for="outputDir">Save to folder</label>
             <div class="path-row">
               <input
                 id="outputDir"
                 name="outputDir"
                 type="text"
-                required
                 spellcheck="false"
                 autocomplete="off"
                 placeholder="/Users/you/Movies"
@@ -59,6 +58,12 @@
                 Browse…
               </button>
             </div>
+            <p class="hint" id="serverHint" hidden>
+              This app is running on a server, so it can’t write straight to your
+              PC. After videos finish, use <strong>Download</strong> (or
+              <strong>Download all as ZIP</strong>) and your browser will save
+              them locally.
+            </p>
           </div>
 
           <div class="grid-2">
@@ -102,7 +107,7 @@
               Refresh files
             </button>
           </div>
-          <p class="hint">
+          <p class="hint" id="localHint">
             Videos save as <strong>MP4</strong> in the folder you choose.
             Interrupted runs resume automatically.
           </p>
@@ -139,7 +144,16 @@
       </section>
 
       <section class="files" aria-label="Downloaded files">
-        <h2>Downloaded</h2>
+        <div class="files-head">
+          <h2>Downloaded</h2>
+          <a
+            class="btn btn-ghost btn-small"
+            id="zipBtn"
+            href="/api/files/zip"
+            hidden
+            >Download all as ZIP</a
+          >
+        </div>
         <p class="empty" id="empty">No files yet.</p>
         <ul class="file-list" id="fileList" hidden></ul>
       </section>

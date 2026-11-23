@@ -60,7 +60,7 @@ python download_playlist.py "URL" --audio-only
 - The container listens on `0.0.0.0:$PORT` (default `5050`).
 - Set `DOWNLOAD_DIR` to control the default save path inside the container.
 - Mount a persistent volume at that path so downloads survive restarts.
-- Native **Browse…** folder picking works on macOS/Linux hosts running outside Docker; in Docker, set the path in the UI or via the volume mount.
+- **Browse…** only works when the app runs on your own computer. On a deployed server it cannot see your PC’s folders — after a video is fetched, use **Download** or **Download all as ZIP** in the UI; your browser saves the file locally.
 
 ## License / use
 

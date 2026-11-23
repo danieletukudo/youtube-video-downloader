@@ -7,6 +7,10 @@
   const selectAllBtn = document.getElementById("selectAll");
   const selectNoneBtn = document.getElementById("selectNone");
   const outputDirInput = document.getElementById("outputDir");
+  const folderField = document.getElementById("folderField");
+  const serverHint = document.getElementById("serverHint");
+  const localHint = document.getElementById("localHint");
+  const zipBtn = document.getElementById("zipBtn");
   const statusEl = document.getElementById("status");
   const statusTitle = document.getElementById("statusTitle");
   const statusMeta = document.getElementById("statusMeta");
@@ -23,6 +27,7 @@
   let eventSource = null;
   let playlistLoaded = false;
   let saveTimer = null;
+  let serverMode = false;
 
   function formatBytes(n) {
     if (!n && n !== 0) return "";
@@ -63,6 +68,15 @@
     return outputDirInput.value.trim();
   }
 
+  function applyServerMode(enabled) {
+    serverMode = Boolean(enabled);
+    folderField.classList.toggle("folder-field-server", serverMode);
+    serverHint.hidden = !serverMode;
+    localHint.hidden = serverMode;
+    outputDirInput.required = !serverMode;
+    browseBtn.disabled = serverMode;
+  }
+
   function selectedCheckboxes() {
     return [...videoList.querySelectorAll('input[type="checkbox"]:checked')];
   }
@@ -100,7 +114,7 @@
   function setBusy(busy) {
     submitBtn.dataset.busy = busy ? "1" : "0";
     previewBtn.disabled = busy;
-    browseBtn.disabled = busy;
+    browseBtn.disabled = busy || serverMode;
     if (busy) {
       submitBtn.disabled = true;
       submitBtn.textContent = "Downloading…";
@@ -137,6 +151,7 @@
   async function loadSettings() {
     const res = await fetch("/api/settings");
     const data = await res.json();
+    applyServerMode(data.server_mode || data.mode === "server");
     if (data.output_dir) {
       outputDirInput.value = data.output_dir;
     }
@@ -150,18 +165,22 @@
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not save folder");
-    outputDirInput.value = data.output_dir;
+    if (data.output_dir) outputDirInput.value = data.output_dir;
     return data.output_dir;
   }
 
   async function loadFiles() {
     try {
       const dir = currentOutputDir();
-      const qs = dir ? `?dir=${encodeURIComponent(dir)}` : "";
+      const qs =
+        !serverMode && dir ? `?dir=${encodeURIComponent(dir)}` : "";
       const res = await fetch(`/api/files${qs}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not list files");
 
+      if (typeof data.server_mode === "boolean") {
+        applyServerMode(data.server_mode);
+      }
       if (data.output_dir && data.output_dir !== outputDirInput.value) {
         outputDirInput.value = data.output_dir;
       }
@@ -169,27 +188,35 @@
       const files = data.files || [];
       if (!files.length) {
         empty.hidden = false;
-        empty.textContent = `No files yet in ${data.output_dir || "this folder"}.`;
+        empty.textContent = serverMode
+          ? "No files yet. Load a video, download it, then save it to your PC from this list."
+          : `No files yet in ${data.output_dir || "this folder"}.`;
         fileList.hidden = true;
         fileList.innerHTML = "";
+        zipBtn.hidden = true;
         return;
       }
 
       empty.hidden = true;
       fileList.hidden = false;
+      zipBtn.hidden = false;
+      zipBtn.href = data.zip_url || "/api/files/zip";
       fileList.innerHTML = files
-        .map(
-          (f) => `
+        .map((f) => {
+          const href = f.download_url || `/api/files/download/${encodeURIComponent(f.name)}`;
+          return `
           <li>
             <span class="name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
             <span class="size">${formatBytes(f.size)} · ${escapeHtml(f.ext || "")}</span>
-          </li>`
-        )
+            <a class="file-dl" href="${escapeHtml(href)}" download="${escapeHtml(f.name)}">Download</a>
+          </li>`;
+        })
         .join("");
     } catch (err) {
       empty.hidden = false;
       empty.textContent = err.message || "Could not list files.";
       fileList.hidden = true;
+      zipBtn.hidden = true;
     }
   }
 
@@ -236,9 +263,13 @@
       barFill.style.width = "100%";
       const title = event.result?.title || "Playlist";
       const count = event.result?.count ?? "";
-      const out = event.result?.output_dir || currentOutputDir();
       nowPlaying.textContent = `${title}${count !== "" ? ` — ${count} videos` : ""}`;
-      showBanner(`Saved to ${out}`, "ok");
+      showBanner(
+        serverMode
+          ? "Ready on the server — use Download / Download all as ZIP to save to your PC."
+          : `Saved to ${event.result?.output_dir || currentOutputDir()}`,
+        "ok"
+      );
       loadFiles();
       if (eventSource) {
         eventSource.close();
@@ -260,15 +291,21 @@
 
   browseBtn.addEventListener("click", async () => {
     clearBanner();
+    if (serverMode) {
+      showBanner(
+        "Browse only works when the app runs on your computer. Use the Download buttons to save files to your PC.",
+        "err"
+      );
+      return;
+    }
     browseBtn.disabled = true;
     browseBtn.textContent = "Opening…";
     try {
-      // Persist typed path first so the dialog opens near it.
       if (currentOutputDir()) {
         try {
           await saveOutputDir(currentOutputDir());
         } catch {
-          // ignore — browse can still open
+          // ignore
         }
       }
       const res = await fetch("/api/browse-folder", { method: "POST" });
@@ -284,12 +321,13 @@
     } catch (err) {
       showBanner(err.message || "Browse failed", "err");
     } finally {
-      browseBtn.disabled = false;
+      browseBtn.disabled = serverMode;
       browseBtn.textContent = "Browse…";
     }
   });
 
   outputDirInput.addEventListener("change", () => {
+    if (serverMode) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
       const dir = currentOutputDir();
@@ -374,7 +412,7 @@
     }
 
     const outputDir = currentOutputDir();
-    if (!outputDir) {
+    if (!serverMode && !outputDir) {
       showBanner("Choose a save folder first.", "err");
       return;
     }
@@ -386,8 +424,8 @@
       audio_only: document.getElementById("audio_only").checked,
       selected,
       video_urls: urls,
-      output_dir: outputDir,
     };
+    if (!serverMode) payload.output_dir = outputDir;
 
     setBusy(true);
     statusEl.classList.add("visible");

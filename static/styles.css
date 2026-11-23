@@ -475,8 +475,17 @@ body::before {
   animation: rise 0.8s ease 0.22s both;
 }
 
+.files-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+
 .files h2 {
-  margin: 0 0 0.85rem;
+  margin: 0;
   font-family: var(--font-display);
   font-size: 1.2rem;
   letter-spacing: -0.03em;
@@ -490,9 +499,10 @@ body::before {
 }
 
 .file-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.85rem;
+  align-items: center;
   padding: 0.85rem 0.1rem;
   border-bottom: 1px solid var(--line);
   font-size: 0.92rem;
@@ -507,6 +517,25 @@ body::before {
 .file-list .size {
   color: var(--muted);
   flex-shrink: 0;
+}
+
+.file-list .file-dl {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.file-list .file-dl:hover {
+  text-decoration: underline;
+}
+
+.folder-field-server .path-row {
+  display: none;
+}
+
+.folder-field-server label {
+  display: none;
 }
 
 .empty {

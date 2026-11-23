@@ -4,7 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
     PORT=5050 \
-    DOWNLOAD_DIR=/data
+    DOWNLOAD_DIR=/data \
+    RUNNING_IN_DOCKER=1
 
 # ffmpeg for merge/remux; curl for deno install
 RUN apt-get update \

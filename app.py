@@ -3,17 +3,18 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import platform
-
 import subprocess
 import threading
 import time
 import uuid
+import zipfile
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
 from downloader import (
     convert_dir_to_mp4,
@@ -35,6 +36,42 @@ app = Flask(__name__, static_folder=str(STATIC), static_url_path="/static")
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 _settings_lock = threading.Lock()
+
+
+def _running_in_container() -> bool:
+    if os.environ.get("RUNNING_IN_DOCKER", "").lower() in {"1", "true", "yes"}:
+        return True
+    if Path("/.dockerenv").exists():
+        return True
+    # Common cloud/container signal used by our image
+    if os.environ.get("DOWNLOAD_DIR") == "/data":
+        return True
+    return False
+
+
+def _can_browse_folders() -> bool:
+    """Native folder picking only works on a local desktop, not in Docker/cloud."""
+    if _running_in_container():
+        return False
+    if os.environ.get("HOST", "127.0.0.1") not in {"127.0.0.1", "localhost", "::1"}:
+        # Bound to a public interface — treat as remote server
+        if platform.system() != "Darwin":
+            return False
+    return True
+
+
+def _safe_file_in_output(name: str, output_dir: Path) -> Path | None:
+    """Resolve a filename strictly inside output_dir (no path traversal)."""
+    if not name or name != Path(name).name:
+        return None
+    candidate = (output_dir / name).resolve()
+    try:
+        candidate.relative_to(output_dir.resolve())
+    except ValueError:
+        return None
+    if not candidate.is_file():
+        return None
+    return candidate
 
 
 def _load_settings() -> dict:
@@ -228,25 +265,57 @@ def index():
 def get_settings():
     path = _get_output_dir()
     path.mkdir(parents=True, exist_ok=True)
-    return jsonify({"output_dir": str(path.resolve())})
+    server_mode = not _can_browse_folders()
+    return jsonify(
+        {
+            "output_dir": str(path.resolve()),
+            "server_mode": server_mode,
+            "can_browse": not server_mode,
+            "mode": "server" if server_mode else "local",
+        }
+    )
 
 
 @app.post("/api/settings")
 def update_settings():
+    if not _can_browse_folders():
+        path = _get_output_dir()
+        path.mkdir(parents=True, exist_ok=True)
+        return jsonify(
+            {
+                "output_dir": str(path.resolve()),
+                "server_mode": True,
+                "message": "Save folder is fixed on the server. Use Download on each file to save to your PC.",
+            }
+        )
+
     data = request.get_json(silent=True) or {}
     raw = (data.get("output_dir") or "").strip()
     if not raw:
         return jsonify({"error": "output_dir is required"}), 400
     try:
         path = _set_output_dir(Path(raw))
-        return jsonify({"output_dir": str(path)})
+        return jsonify({"output_dir": str(path), "server_mode": False, "can_browse": True})
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 400
 
 
 @app.post("/api/browse-folder")
 def browse_folder():
-    """Open a native folder picker and remember the choice."""
+    """Open a native folder picker and remember the choice (local desktop only)."""
+    if not _can_browse_folders():
+        return jsonify(
+            {
+                "error": (
+                    "Folder Browse only works when this app runs on your computer. "
+                    "On a deployed server, grab videos with the Download buttons below — "
+                    "your browser will save them to your PC."
+                ),
+                "server_mode": True,
+                "output_dir": str(_get_output_dir().resolve()),
+            }
+        ), 400
+
     try:
         chosen = _pick_folder_native()
         if chosen is None:
@@ -411,15 +480,58 @@ def job_events(job_id: str):
 def files():
     raw = request.args.get("dir")
     try:
-        output_dir = _resolve_output_dir(raw) if raw else _get_output_dir().resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if _can_browse_folders() and raw:
+            output_dir = _resolve_output_dir(raw)
+        else:
+            output_dir = _get_output_dir().resolve()
+            output_dir.mkdir(parents=True, exist_ok=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 400
+
+    listed = list_downloaded_files(output_dir)
+    for item in listed:
+        item["download_url"] = f"/api/files/download/{item['name']}"
+
     return jsonify(
         {
             "output_dir": str(output_dir),
-            "files": list_downloaded_files(output_dir),
+            "files": listed,
+            "server_mode": not _can_browse_folders(),
+            "zip_url": "/api/files/zip",
         }
+    )
+
+
+@app.get("/api/files/download/<path:filename>")
+def download_file(filename: str):
+    """Send a finished video to the browser so the user can save it on their PC."""
+    output_dir = _get_output_dir().resolve()
+    path = _safe_file_in_output(filename, output_dir)
+    if path is None:
+        return jsonify({"error": "File not found"}), 404
+    return send_file(path, as_attachment=True, download_name=path.name)
+
+
+@app.get("/api/files/zip")
+def download_zip():
+    """Zip all finished videos for a single browser download to the user's PC."""
+    output_dir = _get_output_dir().resolve()
+    files = list_downloaded_files(output_dir)
+    if not files:
+        return jsonify({"error": "No files to download"}), 404
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as zf:
+        for item in files:
+            path = _safe_file_in_output(item["name"], output_dir)
+            if path is not None:
+                zf.write(path, arcname=path.name)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="playlist-grab.zip",
     )
 
 
@@ -427,7 +539,10 @@ def files():
 def convert_mp4():
     data = request.get_json(silent=True) or {}
     try:
-        output_dir = _resolve_output_dir(data.get("output_dir"))
+        if _can_browse_folders():
+            output_dir = _resolve_output_dir(data.get("output_dir"))
+        else:
+            output_dir = _get_output_dir().resolve()
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 400
     result = convert_dir_to_mp4(output_dir, delete_original=True)
