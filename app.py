@@ -46,17 +46,37 @@ def _running_in_container() -> bool:
     # Common cloud/container signal used by our image
     if os.environ.get("DOWNLOAD_DIR") == "/data":
         return True
+    # Popular PaaS markers
+    for key in (
+        "RENDER",
+        "RAILWAY_ENVIRONMENT",
+        "FLY_APP_NAME",
+        "K_SERVICE",
+        "KUBERNETES_SERVICE_HOST",
+        "DYNO",
+    ):
+        if os.environ.get(key):
+            return True
     return False
 
 
 def _can_browse_folders() -> bool:
-    """Native folder picking only works on a local desktop, not in Docker/cloud."""
+    """Native folder picking only works on a local desktop, not in Docker/cloud.
+
+    Opt in with ALLOW_FOLDER_BROWSE=1. Otherwise browsing is disabled whenever
+    we look like a container/cloud deploy or bind beyond localhost.
+    """
+    if os.environ.get("ALLOW_FOLDER_BROWSE", "").lower() in {"1", "true", "yes"}:
+        return True
+    if os.environ.get("APP_MODE", "").lower() == "local":
+        return not _running_in_container()
+    if os.environ.get("APP_MODE", "").lower() == "server":
+        return False
     if _running_in_container():
         return False
-    if os.environ.get("HOST", "127.0.0.1") not in {"127.0.0.1", "localhost", "::1"}:
-        # Bound to a public interface — treat as remote server
-        if platform.system() != "Darwin":
-            return False
+    host = os.environ.get("HOST", "127.0.0.1").strip().lower()
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        return False
     return True
 
 
@@ -254,6 +274,14 @@ def _run_download(job_id: str, payload: dict) -> None:
         _push_event(job_id, {"type": "done", "result": result})
     except Exception as exc:  # noqa: BLE001
         _push_event(job_id, {"type": "error", "message": str(exc)})
+
+
+@app.after_request
+def _no_cache_static(response):
+    # Help deploys show UI updates immediately after a new release.
+    if request.path.startswith("/static/") or request.path in {"/", "/api/settings"}:
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @app.get("/")

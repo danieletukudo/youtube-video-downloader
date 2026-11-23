@@ -8,6 +8,8 @@ services:
       HOST: "0.0.0.0"
       PORT: "5050"
       DOWNLOAD_DIR: "/data"
+      APP_MODE: "server"
+      RUNNING_IN_DOCKER: "1"
     volumes:
       # Host folder where videos are saved — change the left side to any path
       - ./downloads:/data

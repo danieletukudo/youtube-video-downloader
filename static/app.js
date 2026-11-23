@@ -10,6 +10,7 @@
   const folderField = document.getElementById("folderField");
   const serverHint = document.getElementById("serverHint");
   const localHint = document.getElementById("localHint");
+  const modeBanner = document.getElementById("modeBanner");
   const zipBtn = document.getElementById("zipBtn");
   const statusEl = document.getElementById("status");
   const statusTitle = document.getElementById("statusTitle");
@@ -73,6 +74,7 @@
     folderField.classList.toggle("folder-field-server", serverMode);
     serverHint.hidden = !serverMode;
     localHint.hidden = serverMode;
+    modeBanner.hidden = !serverMode;
     outputDirInput.required = !serverMode;
     browseBtn.disabled = serverMode;
   }

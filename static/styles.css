@@ -98,6 +98,22 @@ body::before {
   animation: rise 0.7s ease 0.08s both;
 }
 
+.mode-banner {
+  margin: 0 0 1.25rem;
+  padding: 0.95rem 1.1rem;
+  border-radius: 14px;
+  border: 1.5px solid rgba(225, 6, 0, 0.28);
+  background: rgba(225, 6, 0, 0.08);
+  color: var(--ink);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  animation: rise 0.55s ease both;
+}
+
+.mode-banner strong {
+  color: var(--accent-deep);
+}
+
 .panel {
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid var(--line);
