@@ -24,15 +24,9 @@
       </header>
 
       <p class="lede">
-        Paste a YouTube video or playlist URL, preview what you’ll get, then
-        download as MP4.
+        Paste a YouTube video or playlist URL, choose a folder on your computer,
+        then save as MP4.
       </p>
-
-      <div class="mode-banner" id="modeBanner" hidden role="status">
-        <strong>Deployed mode:</strong> this app can’t write to folders on your
-        PC. After a video finishes below, click <strong>Download</strong> (or
-        <strong>Download all as ZIP</strong>) — your browser saves it locally.
-      </div>
 
       <section class="panel" aria-label="Download form">
         <form id="form">
@@ -50,25 +44,23 @@
           </div>
 
           <div class="field" id="folderField">
-            <label for="outputDir">Save to folder</label>
+            <label for="folderLabel">Save to folder on this PC</label>
             <div class="path-row">
               <input
-                id="outputDir"
-                name="outputDir"
+                id="folderLabel"
+                name="folderLabel"
                 type="text"
+                readonly
                 spellcheck="false"
-                autocomplete="off"
-                placeholder="/Users/you/Movies"
+                placeholder="No folder selected yet"
               />
               <button class="btn btn-ghost" id="browseBtn" type="button">
                 Browse…
               </button>
             </div>
-            <p class="hint" id="serverHint" hidden>
-              This app is running on a server, so it can’t write straight to your
-              PC. After videos finish, use <strong>Download</strong> (or
-              <strong>Download all as ZIP</strong>) and your browser will save
-              them locally.
+            <p class="hint" id="folderHint">
+              Browse opens your system folder picker (Chrome / Edge). Videos are
+              written into that folder after they finish fetching.
             </p>
           </div>
 
@@ -113,9 +105,9 @@
               Refresh files
             </button>
           </div>
-          <p class="hint" id="localHint">
-            Videos save as <strong>MP4</strong> in the folder you choose.
-            Interrupted runs resume automatically.
+          <p class="hint">
+            Videos are fetched as <strong>MP4</strong>, then saved into the
+            folder you picked on this computer.
           </p>
         </form>
 
@@ -151,21 +143,27 @@
 
       <section class="files" aria-label="Downloaded files">
         <div class="files-head">
-          <h2>Downloaded</h2>
-          <a
-            class="btn btn-ghost btn-small"
-            id="zipBtn"
-            href="/api/files/zip"
-            hidden
-            >Download all as ZIP</a
-          >
+          <h2>Ready on server</h2>
+          <div class="files-actions">
+            <button class="btn btn-ghost btn-small" id="saveAllBtn" type="button" hidden>
+              Save all to folder
+            </button>
+            <a
+              class="btn btn-ghost btn-small"
+              id="zipBtn"
+              href="/api/files/zip"
+              hidden
+              >Download ZIP</a
+            >
+          </div>
         </div>
         <p class="empty" id="empty">No files yet.</p>
         <ul class="file-list" id="fileList" hidden></ul>
       </section>
 
       <p class="foot">
-        Local tool — only download content you have the right to save.
+        Only download content you have the right to save. Folder picker works
+        best in Chrome or Edge over HTTPS.
       </p>
     </main>
 

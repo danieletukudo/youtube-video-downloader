@@ -514,14 +514,27 @@ body::before {
   border-top: 1px solid var(--line);
 }
 
+.files-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .file-list li {
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 0.85rem;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 0.75rem;
   align-items: center;
   padding: 0.85rem 0.1rem;
   border-bottom: 1px solid var(--line);
   font-size: 0.92rem;
+}
+
+@media (max-width: 700px) {
+  .file-list li {
+    grid-template-columns: 1fr auto;
+  }
 }
 
 .file-list .name {
@@ -536,22 +549,25 @@ body::before {
 }
 
 .file-list .file-dl {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
   color: var(--accent);
+  font: inherit;
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.file-list .file-dl:hover {
+.file-list a.file-dl:hover,
+.file-list button.file-dl:hover {
   text-decoration: underline;
 }
 
-.folder-field-server .path-row {
-  display: none;
-}
-
-.folder-field-server label {
-  display: none;
+.file-list input[readonly] {
+  cursor: default;
 }
 
 .empty {

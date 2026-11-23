@@ -6,12 +6,10 @@
   const refreshBtn = document.getElementById("refresh");
   const selectAllBtn = document.getElementById("selectAll");
   const selectNoneBtn = document.getElementById("selectNone");
-  const outputDirInput = document.getElementById("outputDir");
-  const folderField = document.getElementById("folderField");
-  const serverHint = document.getElementById("serverHint");
-  const localHint = document.getElementById("localHint");
-  const modeBanner = document.getElementById("modeBanner");
+  const folderLabel = document.getElementById("folderLabel");
+  const folderHint = document.getElementById("folderHint");
   const zipBtn = document.getElementById("zipBtn");
+  const saveAllBtn = document.getElementById("saveAllBtn");
   const statusEl = document.getElementById("status");
   const statusTitle = document.getElementById("statusTitle");
   const statusMeta = document.getElementById("statusMeta");
@@ -27,8 +25,13 @@
 
   let eventSource = null;
   let playlistLoaded = false;
-  let saveTimer = null;
-  let serverMode = false;
+  /** @type {FileSystemDirectoryHandle | null} */
+  let dirHandle = null;
+  let latestFiles = [];
+  let filesBeforeJob = new Set();
+  let pendingSaveCount = 0;
+
+  const supportsDirPicker = typeof window.showDirectoryPicker === "function";
 
   function formatBytes(n) {
     if (!n && n !== 0) return "";
@@ -65,20 +68,6 @@
     banner.textContent = "";
   }
 
-  function currentOutputDir() {
-    return outputDirInput.value.trim();
-  }
-
-  function applyServerMode(enabled) {
-    serverMode = Boolean(enabled);
-    folderField.classList.toggle("folder-field-server", serverMode);
-    serverHint.hidden = !serverMode;
-    localHint.hidden = serverMode;
-    modeBanner.hidden = !serverMode;
-    outputDirInput.required = !serverMode;
-    browseBtn.disabled = serverMode;
-  }
-
   function selectedCheckboxes() {
     return [...videoList.querySelectorAll('input[type="checkbox"]:checked')];
   }
@@ -91,6 +80,23 @@
     return selectedCheckboxes()
       .map((el) => el.dataset.url)
       .filter(Boolean);
+  }
+
+  function updateFolderLabel() {
+    if (dirHandle) {
+      folderLabel.value = dirHandle.name;
+      folderHint.textContent =
+        "Videos will be written into this folder on your computer after they finish.";
+    } else if (supportsDirPicker) {
+      folderLabel.value = "";
+      folderHint.textContent =
+        "Click Browse… to pick a folder on this PC (Chrome / Edge).";
+    } else {
+      folderLabel.value = "";
+      folderHint.textContent =
+        "This browser can’t pick folders. Use the Download links, or open the site in Chrome / Edge.";
+      browseBtn.disabled = true;
+    }
   }
 
   function updateDownloadButton() {
@@ -116,12 +122,82 @@
   function setBusy(busy) {
     submitBtn.dataset.busy = busy ? "1" : "0";
     previewBtn.disabled = busy;
-    browseBtn.disabled = busy || serverMode;
+    browseBtn.disabled = busy || !supportsDirPicker;
     if (busy) {
       submitBtn.disabled = true;
       submitBtn.textContent = "Downloading…";
     } else {
       updateDownloadButton();
+    }
+  }
+
+  async function pickFolder() {
+    if (!supportsDirPicker) {
+      throw new Error(
+        "Folder picker needs Chrome or Edge (File System Access API)."
+      );
+    }
+    const handle = await window.showDirectoryPicker({
+      mode: "readwrite",
+      id: "playlist-grab-save",
+      startIn: "downloads",
+    });
+    // Verify we can write (prompts for permission if needed)
+    const perm = await handle.requestPermission({ mode: "readwrite" });
+    if (perm !== "granted") {
+      throw new Error("Permission to write to that folder was denied.");
+    }
+    dirHandle = handle;
+    updateFolderLabel();
+    return handle;
+  }
+
+  async function ensureFolder() {
+    if (dirHandle) {
+      const perm = await dirHandle.queryPermission({ mode: "readwrite" });
+      if (perm === "granted") return dirHandle;
+      const next = await dirHandle.requestPermission({ mode: "readwrite" });
+      if (next === "granted") return dirHandle;
+    }
+    return pickFolder();
+  }
+
+  async function writeFileToFolder(fileMeta) {
+    const handle = await ensureFolder();
+    const url = fileMeta.download_url || `/api/files/download/${encodeURIComponent(fileMeta.name)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Could not fetch ${fileMeta.name}`);
+    const blob = await res.blob();
+    const fileHandle = await handle.getFileHandle(fileMeta.name, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+  }
+
+  async function saveFilesToFolder(files) {
+    if (!files.length) {
+      showBanner("No files to save yet.", "err");
+      return;
+    }
+    try {
+      await ensureFolder();
+      let ok = 0;
+      for (const file of files) {
+        nowPlaying.textContent = `Saving ${file.name} to your folder…`;
+        await writeFileToFolder(file);
+        ok += 1;
+      }
+      showBanner(
+        `Saved ${ok} file${ok === 1 ? "" : "s"} to “${dirHandle.name}” on this PC.`,
+        "ok"
+      );
+      nowPlaying.textContent = `Saved to ${dirHandle.name}`;
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        showBanner("Folder selection cancelled.", "err");
+        return;
+      }
+      showBanner(err.message || "Could not save to folder", "err");
     }
   }
 
@@ -150,66 +226,37 @@
     updateDownloadButton();
   }
 
-  async function loadSettings() {
-    const res = await fetch("/api/settings");
-    const data = await res.json();
-    applyServerMode(data.server_mode || data.mode === "server");
-    if (data.output_dir) {
-      outputDirInput.value = data.output_dir;
-    }
-  }
-
-  async function saveOutputDir(dir) {
-    const res = await fetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ output_dir: dir }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not save folder");
-    if (data.output_dir) outputDirInput.value = data.output_dir;
-    return data.output_dir;
-  }
-
   async function loadFiles() {
     try {
-      const dir = currentOutputDir();
-      const qs =
-        !serverMode && dir ? `?dir=${encodeURIComponent(dir)}` : "";
-      const res = await fetch(`/api/files${qs}`);
+      const res = await fetch("/api/files");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not list files");
 
-      if (typeof data.server_mode === "boolean") {
-        applyServerMode(data.server_mode);
-      }
-      if (data.output_dir && data.output_dir !== outputDirInput.value) {
-        outputDirInput.value = data.output_dir;
-      }
-
-      const files = data.files || [];
-      if (!files.length) {
+      latestFiles = data.files || [];
+      if (!latestFiles.length) {
         empty.hidden = false;
-        empty.textContent = serverMode
-          ? "No files yet. Load a video, download it, then save it to your PC from this list."
-          : `No files yet in ${data.output_dir || "this folder"}.`;
+        empty.textContent = "No files yet.";
         fileList.hidden = true;
         fileList.innerHTML = "";
         zipBtn.hidden = true;
+        saveAllBtn.hidden = true;
         return;
       }
 
       empty.hidden = true;
       fileList.hidden = false;
       zipBtn.hidden = false;
+      saveAllBtn.hidden = !supportsDirPicker;
       zipBtn.href = data.zip_url || "/api/files/zip";
-      fileList.innerHTML = files
+      fileList.innerHTML = latestFiles
         .map((f) => {
-          const href = f.download_url || `/api/files/download/${encodeURIComponent(f.name)}`;
+          const href =
+            f.download_url || `/api/files/download/${encodeURIComponent(f.name)}`;
           return `
           <li>
             <span class="name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
             <span class="size">${formatBytes(f.size)} · ${escapeHtml(f.ext || "")}</span>
+            <button class="file-dl" type="button" data-save="${escapeHtml(f.name)}">Save to folder</button>
             <a class="file-dl" href="${escapeHtml(href)}" download="${escapeHtml(f.name)}">Download</a>
           </li>`;
         })
@@ -219,6 +266,7 @@
       empty.textContent = err.message || "Could not list files.";
       fileList.hidden = true;
       zipBtn.hidden = true;
+      saveAllBtn.hidden = true;
     }
   }
 
@@ -226,7 +274,7 @@
     if (event.type === "status") {
       statusEl.classList.add("visible");
       statusTitle.textContent =
-        event.status === "running" ? "Downloading" : event.status;
+        event.status === "running" ? "Fetching" : event.status;
       if (event.message) nowPlaying.textContent = event.message;
       return;
     }
@@ -266,13 +314,23 @@
       const title = event.result?.title || "Playlist";
       const count = event.result?.count ?? "";
       nowPlaying.textContent = `${title}${count !== "" ? ` — ${count} videos` : ""}`;
-      showBanner(
-        serverMode
-          ? "Ready on the server — use Download / Download all as ZIP to save to your PC."
-          : `Saved to ${event.result?.output_dir || currentOutputDir()}`,
-        "ok"
-      );
-      loadFiles();
+      loadFiles().then(async () => {
+        if (supportsDirPicker) {
+          let toSave = latestFiles.filter((f) => !filesBeforeJob.has(f.name));
+          if (!toSave.length && pendingSaveCount > 0) {
+            toSave = [...latestFiles]
+              .sort((a, b) => (b.modified || 0) - (a.modified || 0))
+              .slice(0, pendingSaveCount);
+          }
+          showBanner("Fetching done — saving into your chosen folder…", "ok");
+          await saveFilesToFolder(toSave.length ? toSave : latestFiles);
+        } else {
+          showBanner(
+            "Fetching done. Use Download / ZIP to save files on this PC.",
+            "ok"
+          );
+        }
+      });
       if (eventSource) {
         eventSource.close();
         eventSource = null;
@@ -293,54 +351,37 @@
 
   browseBtn.addEventListener("click", async () => {
     clearBanner();
-    if (serverMode) {
-      showBanner(
-        "Browse only works when the app runs on your computer. Use the Download buttons to save files to your PC.",
-        "err"
-      );
-      return;
-    }
     browseBtn.disabled = true;
     browseBtn.textContent = "Opening…";
     try {
-      if (currentOutputDir()) {
-        try {
-          await saveOutputDir(currentOutputDir());
-        } catch {
-          // ignore
-        }
-      }
-      const res = await fetch("/api/browse-folder", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not open folder picker");
-      if (data.cancelled) {
+      await pickFolder();
+      showBanner(`Folder selected: ${dirHandle.name}`, "ok");
+    } catch (err) {
+      if (err && err.name === "AbortError") {
         showBanner("Folder selection cancelled.", "err");
       } else {
-        outputDirInput.value = data.output_dir;
-        showBanner(`Save folder set to ${data.output_dir}`, "ok");
-        await loadFiles();
+        showBanner(err.message || "Could not open folder picker", "err");
       }
-    } catch (err) {
-      showBanner(err.message || "Browse failed", "err");
     } finally {
-      browseBtn.disabled = serverMode;
+      browseBtn.disabled = !supportsDirPicker;
       browseBtn.textContent = "Browse…";
     }
   });
 
-  outputDirInput.addEventListener("change", () => {
-    if (serverMode) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const dir = currentOutputDir();
-      if (!dir) return;
-      try {
-        await saveOutputDir(dir);
-        await loadFiles();
-      } catch (err) {
-        showBanner(err.message || "Invalid folder", "err");
-      }
-    }, 300);
+  saveAllBtn.addEventListener("click", () => saveFilesToFolder(latestFiles));
+
+  fileList.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-save]");
+    if (!btn) return;
+    const name = btn.getAttribute("data-save");
+    const file = latestFiles.find((f) => f.name === name);
+    if (!file) return;
+    btn.disabled = true;
+    try {
+      await saveFilesToFolder([file]);
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   previewBtn.addEventListener("click", async () => {
@@ -368,8 +409,8 @@
       renderVideos(data);
       const msg =
         data.kind === "video" || data.count === 1
-          ? "Video loaded. Click Download video."
-          : `Loaded ${data.count} videos. Select what to download.`;
+          ? "Video loaded. Pick a folder, then click Download video."
+          : `Loaded ${data.count} videos. Pick a folder, then download.`;
       showBanner(msg, "ok");
     } catch (err) {
       playlistLoaded = false;
@@ -413,10 +454,18 @@
       return;
     }
 
-    const outputDir = currentOutputDir();
-    if (!serverMode && !outputDir) {
-      showBanner("Choose a save folder first.", "err");
-      return;
+    // Ask for the destination folder up front (browser native picker).
+    if (supportsDirPicker && !dirHandle) {
+      try {
+        await pickFolder();
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          showBanner("Choose a folder to continue.", "err");
+          return;
+        }
+        showBanner(err.message || "Folder picker failed", "err");
+        return;
+      }
     }
 
     const urls = selectedUrls();
@@ -427,7 +476,9 @@
       selected,
       video_urls: urls,
     };
-    if (!serverMode) payload.output_dir = outputDir;
+
+    filesBeforeJob = new Set(latestFiles.map((f) => f.name));
+    pendingSaveCount = selected.length;
 
     setBusy(true);
     statusEl.classList.add("visible");
@@ -444,8 +495,6 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not start download");
-
-      if (data.output_dir) outputDirInput.value = data.output_dir;
 
       if (eventSource) eventSource.close();
       eventSource = new EventSource(`/api/jobs/${data.job_id}/events`);
@@ -464,7 +513,6 @@
 
   refreshBtn.addEventListener("click", loadFiles);
 
-  loadSettings()
-    .then(loadFiles)
-    .catch(() => loadFiles());
+  updateFolderLabel();
+  loadFiles();
 })();
