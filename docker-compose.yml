@@ -1,0 +1,14 @@
+services:
+  playlist-grab:
+    build: .
+    image: youtube-video-downloader:latest
+    ports:
+      - "5050:5050"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5050"
+      DOWNLOAD_DIR: "/data"
+    volumes:
+      # Host folder where videos are saved — change the left side to any path
+      - ./downloads:/data
+    restart: unless-stopped

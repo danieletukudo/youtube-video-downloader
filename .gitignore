@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+downloads/
+*.mp4
+*.mkv
+*.webm
+*.part
+*.ytdl
+.settings.json
+settings.json
+.env
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Playlist Grab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 5.14v13.72L19 12 8 5.14z" />
+          </svg>
+        </div>
+        <h1 class="brand-name">Playlist Grab</h1>
+      </header>
+
+      <p class="lede">
+        Paste a YouTube video or playlist URL, preview what you’ll get, then
+        download as MP4.
+      </p>
+
+      <section class="panel" aria-label="Download form">
+        <form id="form">
+          <div class="field">
+            <label for="url">Video or playlist URL</label>
+            <input
+              id="url"
+              name="url"
+              type="url"
+              required
+              placeholder="https://www.youtube.com/watch?v=… or /playlist?list=…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+
+          <div class="field">
+            <label for="outputDir">Save to folder</label>
+            <div class="path-row">
+              <input
+                id="outputDir"
+                name="outputDir"
+                type="text"
+                required
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="/Users/you/Movies"
+              />
+              <button class="btn btn-ghost" id="browseBtn" type="button">
+                Browse…
+              </button>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label for="quality">Max quality</label>
+              <select id="quality" name="quality">
+                <option value="360">360p</option>
+                <option value="480">480p</option>
+                <option value="720">720p</option>
+                <option value="1080" selected>1080p</option>
+                <option value="1440">1440p</option>
+                <option value="2160">2160p (4K)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="items">Filter items (optional)</label>
+              <input
+                id="items"
+                name="items"
+                type="text"
+                placeholder="e.g. 1-5 before loading"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+
+          <label class="toggle">
+            <input id="audio_only" name="audio_only" type="checkbox" />
+            <span class="toggle-ui" aria-hidden="true"></span>
+            <span>Audio only (MP3)</span>
+          </label>
+
+          <div class="actions">
+            <button class="btn btn-ghost" id="previewBtn" type="button">
+              Load
+            </button>
+            <button class="btn btn-primary" id="submit" type="submit" disabled>
+              Download selected
+            </button>
+            <button class="btn btn-ghost" id="refresh" type="button">
+              Refresh files
+            </button>
+          </div>
+          <p class="hint">
+            Videos save as <strong>MP4</strong> in the folder you choose.
+            Interrupted runs resume automatically.
+          </p>
+        </form>
+
+        <div class="preview" id="preview" hidden>
+          <div class="preview-head">
+            <div>
+              <h2 class="preview-title" id="previewTitle">Playlist</h2>
+              <p class="preview-meta" id="previewMeta"></p>
+            </div>
+            <div class="preview-actions">
+              <button class="btn btn-ghost btn-small" id="selectAll" type="button">
+                Select all
+              </button>
+              <button class="btn btn-ghost btn-small" id="selectNone" type="button">
+                Clear
+              </button>
+            </div>
+          </div>
+          <ul class="video-list" id="videoList"></ul>
+        </div>
+
+        <div class="status" id="status" aria-live="polite">
+          <div class="status-head">
+            <h2 class="status-title" id="statusTitle">Ready</h2>
+            <span class="status-meta" id="statusMeta"></span>
+          </div>
+          <div class="bar" aria-hidden="true"><span id="barFill"></span></div>
+          <p class="now-playing" id="nowPlaying"></p>
+        </div>
+
+        <div class="banner" id="banner" role="status"></div>
+      </section>
+
+      <section class="files" aria-label="Downloaded files">
+        <h2>Downloaded</h2>
+        <p class="empty" id="empty">No files yet.</p>
+        <ul class="file-list" id="fileList" hidden></ul>
+      </section>
+
+      <p class="foot">
+        Local tool — only download content you have the right to save.
+      </p>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

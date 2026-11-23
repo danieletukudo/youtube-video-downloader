@@ -1,0 +1,15 @@
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+.DS_Store
+downloads
+*.mp4
+*.mkv
+*.webm
+*.part
+settings.json
+.tmp
+agent-tools
+README.md
